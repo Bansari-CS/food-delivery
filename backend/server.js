@@ -57,6 +57,14 @@ app.get("/", (req, res) => {
   res.send("BiteBlitz API — powered by InsForge ✅");
 });
 
+app.get(/^\/(login|register|cart|myorders|place-order|verify|track|profile)(\/.*)?$/i, (req, res) => {
+  if (!process.env.FRONTEND_URL) {
+    return res.status(404).send("Frontend URL is not configured.");
+  }
+  const target = `${process.env.FRONTEND_URL}${req.originalUrl}`;
+  return res.redirect(302, target);
+});
+
 const startServer = () => {
   server.listen(port, () => {
     console.log(`🚀 BiteBlitz server started on port: ${port}`);

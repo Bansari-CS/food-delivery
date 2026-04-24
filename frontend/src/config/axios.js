@@ -1,6 +1,9 @@
 import axios from "axios";
 
-const baseURL = import.meta.env.VITE_API_URL || "http://localhost:4000";
+const envApiUrl = (import.meta.env.VITE_API_URL || "").trim();
+const baseURL = envApiUrl || (import.meta.env.PROD
+  ? "https://food-delivery-37bj.vercel.app"
+  : "http://localhost:4000");
 
 const api = axios.create({
   baseURL,
