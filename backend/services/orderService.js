@@ -8,7 +8,16 @@ import {
 import { computeTax } from "../utils/taxUtils.js";
 import insforge from "../config/insforge.js";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+let stripeClient = null;
+
+const getStripeClient = () => {
+  if (stripeClient) return stripeClient;
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error("SERVER_MISCONFIGURED: Missing STRIPE_SECRET_KEY");
+  }
+  stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY);
+  return stripeClient;
+};
 
 const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
 const DELIVERY_FEE = 50;
@@ -38,6 +47,7 @@ const remapOrder = (o) => (o ? { ...o, _id: o.id } : null);
  * Place an order. Supports both Stripe (returns session URL) and COD.
  */
 export const placeNewOrder = async (body, io) => {
+  const stripe = getStripeClient();
   const subtotal = body.items.reduce(
     (acc, item) => acc + item.price * item.quantity,
     0
@@ -228,6 +238,7 @@ export const placeNewOrder = async (body, io) => {
  * Verify a Stripe payment, mark order as paid, emit socket events, send notifications.
  */
 export const verifyOrderPayment = async (orderId, success, io) => {
+  const stripe = getStripeClient();
   if (success !== "true") {
     await insforge.database.from("orders").delete().eq("id", orderId);
     return { paid: false };
@@ -405,6 +416,7 @@ export const changeOrderStatus = async (userId, orderId, status, io) => {
  * Process an admin-initiated refund via Stripe.
  */
 export const processRefund = async (userId, orderId, reason, io) => {
+  const stripe = getStripeClient();
   await assertAdmin(userId);
 
   const { data: order } = await insforge.database
@@ -460,6 +472,7 @@ export const processRefund = async (userId, orderId, reason, io) => {
  * Customer-initiated order cancellation. Auto-refunds Stripe if applicable.
  */
 export const cancelUserOrder = async (userId, orderId, io) => {
+  const stripe = getStripeClient();
   const { data: order } = await insforge.database
     .from("orders")
     .select()
@@ -521,6 +534,7 @@ export const cancelUserOrder = async (userId, orderId, io) => {
  * Handle incoming Stripe webhooks securely.
  */
 export const handleStripeWebhook = async (rawBody, signature, io) => {
+  const stripe = getStripeClient();
   const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
   let event;
 
@@ -565,7 +579,9 @@ export const handleStripeWebhook = async (rawBody, signature, io) => {
         });
 
         // Emit payment confirmation to user
-        getIO().to(`user_${order.user_id}`).emit("payment_confirmed", { orderId: order.id });
+        emitSocketEvent(io, `user_${order.user_id}`, "payment_confirmed", {
+          orderId: order.id,
+        });
 
         emitSocketEvent(io, "admin_room", "new_order", {
           orderId: order.id,
